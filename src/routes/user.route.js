@@ -7,26 +7,37 @@ const { createHash, isValidPassword } = require("../utils/hashpassword.js");
 const router = Router();
 
 router.post("/register", async (req, res) => {
-  let { usuario, password } = req.body;
+  let { first_name, last_name, email, password } = req.body;
 
   try {
-    const existeusuario = await UsuarioModel.findOne({ usuario });
+    // Validar campos vacíos
+    if (!first_name || !email || !password) {
+      return res.status(400).send('Faltan completar campos obligatorios');
+    }
+
+    // Verificar si el email ya existe en la base de datos
+    const existeusuario = await UsuarioModel.findOne({ email });
 
     if (existeusuario) {
       return res.status(400).send("El usuario ya existe");
     }
 
+    // Crear nuevo usuario
     const nuevousuario = new UsuarioModel({
-      usuario,
+      email,
+      first_name,
+      last_name,
       password: createHash(password),
     });
 
     await nuevousuario.save();
 
-    const token = jwt.sign({ usuario: nuevousuario.usuario }, "coderhouse", {
+    // Crear token JWT
+    const token = jwt.sign({ email: nuevousuario.email, role: nuevousuario.role }, "coderhouse", {
       expiresIn: "1h",
     });
 
+    // Establecer cookie
     res.cookie("coderCookieToken", token, {
       maxAge: 3600000,
       httpOnly: true,
@@ -34,15 +45,21 @@ router.post("/register", async (req, res) => {
 
     res.redirect("/api/sessions/current");
   } catch (err) {
-    res.status(500).send("Error interno del servidor");
+    console.error("Error en la ruta /register:", err); // Añadir para ver el error en los logs
+    res.status(500).send(`Error interno del servidor: ${err.message}`)
   }
 });
 
+
 router.post("/login", async (req, res) => {
-  let { usuario, password } = req.body;
+  let { email, password } = req.body;
 
   try {
-    const usuarioEncontrado = await UsuarioModel.findOne({ usuario });
+    if (email === '' || password === '') {
+      return res.send('todos los campos son obligatoris')
+  }
+
+    const usuarioEncontrado = await UsuarioModel.findOne({ email });
 
     if (!usuarioEncontrado) {
       return res.status(400).send("El usuario no existe");
@@ -54,7 +71,7 @@ router.post("/login", async (req, res) => {
 
     //Generar el token JWT
     const token = jwt.sign(
-      { usuario: usuarioEncontrado.usuario, rol: usuarioEncontrado.rol },
+      { email: usuarioEncontrado.email, role: usuarioEncontrado.role },
       "coderhouse",
       { expiresIn: "1h" }
     );
@@ -75,7 +92,10 @@ router.get(
   "/current",
   passport.authenticate("current", { session: false }),
   (req, res) => {
-    res.render("perfil", { usuario: req.user.usuario });
+    res.render("perfil", { 
+      first_name: req.user.first_name, 
+      email: req.user.email 
+    });
   }
 );
 
@@ -90,12 +110,15 @@ router.get(
   "/admin",
   passport.authenticate("current", { session: false }),
   (req, res) => {
-    if (req.user.rol !== "admin") {
+    if (req.user.role !== "admin") {
+      console.log(req.user); // Añadir esta línea para verificar el objeto req.user
+
       return res
         .status(403)
         .send("Acceso denegado, vete ladron malvado de mi vida!");
     }
     res.render("admin");
+    
   }
 );
 
